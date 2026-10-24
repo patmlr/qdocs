@@ -1,0 +1,70 @@
+---
+layout: api
+title: [[ title ]]
+---
+<dl class="py function">
+<dt class="func-sig">
+<span class="sig-prename">[[ prename ]].</span>
+[%- if classname %]<span class="sig-classname">[[ classname ]]</span><span class="sig-prename">.</span>[% endif %]
+<span class="[[ 'sig-classname' if is_class else 'sig-name' ]]">[[ name ]]</span>
+[%- if not is_namespace %]
+<span class="sig-paren">&nbsp;(&nbsp;</span>
+[%- for p in sig %]
+<em class="sig-param">
+[%- if p.star %]<span class="o">[[ p.star ]]</span>[% endif %]<span class="n">[[ p.name ]]</span>
+[%- if p.default is not none %]<span class="o">=</span>[[ p.default ]][% endif -%]
+</em>
+[%- if not loop.last %]
+,&nbsp;
+[%- endif %]
+[%- endfor %]
+<span class="sig-paren">&nbsp;)</span>
+[%- endif %]<a href="{{ site.github.repository_url | append: '/blob/[[ source.branch ]]/[[ source.path ]]#L[[ source.start ]]-L[[ source.stop ]]' }}"><span class="sig-source">[source]</span></a>
+</dt>
+<dd class="field-body">
+[[ description ]]
+<dl class="field-list">
+[%- if attributes %]
+<dt class="field-head">Attributes<span class="colon">:</span></dt>
+<dd class="field-par">
+<dl>
+[%- for a in attributes %]
+<dt>[[ a.name ]]<span class="attr-value">[[ a.value ]]</span></dt>
+[%- endfor %]
+</dl>
+</dd>
+[%- endif %]
+[%- if params %]
+<dt class="field-head">Parameters<span class="colon">:</span></dt>
+<dd class="field-par">
+<dl>
+[%- for p in params %]
+<dt>[[ p.name ]][% if p.type %]<span class="classifier"><em>[[ p.type ]]</em></span>[% endif %]</dt>
+<dd class="field-desc">[[ p.description ]]</dd>
+[%- endfor %]
+</dl>
+</dd>
+[%- endif %]
+[%- if returns %]
+<dt class="field-head">Returns<span class="colon">:</span></dt>
+<dd class="field-par">
+<dl>
+<dt>[[ returns.label ]][% if returns.type %]<span class="classifier"><em>[[ returns.type ]]</em></span>[% endif %]</dt>
+<dd class="field-desc">[[ returns.description ]]</dd>
+</dl>
+</dd>
+[%- endif %]
+[%- if raises %]
+<dt class="field-head">Raises<span class="colon">:</span></dt>
+<dd class="field-par">
+<dl>
+[%- for r in raises %]
+<dt>[[ r.error ]]</dt>
+<dd class="field-desc">[[ r.description ]]</dd>
+[%- endfor %]
+</dl>
+</dd>
+[%- endif %]
+</dl>
+</dd>
+</dl>

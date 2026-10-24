@@ -1,0 +1,37 @@
+[#- The API navigation tree. Generated once and included by the api layout; script.js marks the current page. -#]
+<ul class="extern">
+[%- for module in modules %]
+  <li class="has-children">
+    <a href="{{ '[[ module.url ]]' | relative_url }}">[[ package ]].[[ module.name ]]</a>
+    <details>
+      <summary aria-label="Show the contents of [[ package ]].[[ module.name ]]">
+        <span class="toctree-toggle" role="presentation"><img src="{{ '/assets/img/chevron-down.svg' | relative_url }}" class="chevron" alt=""/></span>
+      </summary>
+      <ul class="extern-a">
+      [%- for entry in module.entries %]
+      [%- if entry.methods %]
+        <li class="has-children spaced"><a href="{{ '[[ entry.url ]]' | relative_url }}">[[ entry.qualname ]]</a>
+          <details>
+            <summary aria-label="Show the methods of [[ entry.name ]]">
+              <span class="toctree-toggle" role="presentation"><img src="{{ '/assets/img/chevron-down.svg' | relative_url }}" class="chevron" alt=""/></span>
+            </summary>
+            <ul class="extern-a">
+            [%- for m in entry.methods %]
+              [%- if m.inherited_from %]
+              <li class="indent-a"><a class="inherited" href="{{ '[[ m.entry.url ]]' | relative_url }}" title="Inherited from [[ m.inherited_from.qualname ]]">[[ entry.qualname ]].[[ m.name ]] <span class="nav-inherited">([[ m.inherited_from.name ]])</span></a></li>
+              [%- else %]
+              <li class="indent-a"><a href="{{ '[[ m.entry.url ]]' | relative_url }}">[[ entry.qualname ]].[[ m.name ]]</a></li>
+              [%- endif %]
+            [%- endfor %]
+            </ul>
+          </details>
+        </li>
+      [%- else %]
+        <li class="spaced"><a href="{{ '[[ entry.url ]]' | relative_url }}">[[ entry.qualname ]]</a></li>
+      [%- endif %]
+      [%- endfor %]
+      </ul>
+    </details>
+  </li>
+[%- endfor %]
+</ul>

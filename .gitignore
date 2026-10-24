@@ -1,0 +1,7 @@
+__pycache__/
+*.egg-info/
+build/
+dist/
+_site/
+.jekyll-cache/
+.jekyll-metadata

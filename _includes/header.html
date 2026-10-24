@@ -1,0 +1,22 @@
+<header>
+  {% if site.logo %}
+    <h1><a href="{{ '/' | absolute_url }}">
+      <img class="logo-light" src="{{ site.logo | relative_url }}" alt="{{ site.title }} logo" width="270" />
+      <img class="logo-dark" src="{{ site.logo | replace: '.svg', '_dark.svg' | relative_url }}" alt="{{ site.title }} logo" width="270" />
+    </a></h1>
+  {% else %}
+    <h1><a href="{{ '/' | absolute_url }}" class="nologo">{{ site.title }}</a></h1>
+  {% endif %}
+  <p>{{ site.description | default: site.github.project_tagline }}</p>
+
+  {% include badges.html %}
+
+  {% if site.show_downloads %}
+  {% include external.html %}
+  {% endif %}
+</header>
+{% if site.copyright %}
+<footer>
+  <p><small>&copy; {{ site.copyright }}</small></p>
+</footer>
+{% endif %}

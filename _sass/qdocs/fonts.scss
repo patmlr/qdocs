@@ -1,0 +1,17 @@
+// Noto Sans, from jekyll-theme-minimal (CC0 1.0). The fonts are in assets/fonts/.
+@mixin noto-sans($name, $local, $weight, $style) {
+  @font-face {
+    font-family: 'Noto Sans';
+    font-weight: $weight;
+    font-style: $style;
+    src: local($local),
+         local('Noto-Sans-#{$name}'),
+         url('../fonts/Noto-Sans-#{$name}/Noto-Sans-#{$name}.woff2') format('woff2'),
+         url('../fonts/Noto-Sans-#{$name}/Noto-Sans-#{$name}.woff') format('woff');
+  }
+}
+
+@include noto-sans("regular", "Noto Sans", 400, normal);
+@include noto-sans("italic", "Noto Sans Italic", 400, italic);
+@include noto-sans("700", "Noto Sans Bold", 700, normal);
+@include noto-sans("700italic", "Noto Sans Bold Italic", 700, italic);
