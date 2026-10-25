@@ -1,24 +1,84 @@
 [build-system]
-requires = ["setuptools>=77.0.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.27", "hatch-vcs>=0.5"]
+build-backend = "hatchling.build"
 
 [project]
 name = "qdocs"
-version = "0.1.0"
+dynamic = ["version"]
 description = "The website theme and generator of qspec and qunits."
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 authors = [
-    {name = "Patrick Müller"},
+    {name = "Patrick Müller", email = "pamueller.ikp@gmail.com"},
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Documentation",
+    "Topic :: Software Development :: Documentation",
 ]
 dependencies = [
     "jinja2",
-    "pygments>=2.17",  # The catppuccin styles.
+    "pygments>=2.17",
 ]
 
-[tool.setuptools]
+[project.urls]
+source = "https://github.com/patmlr/qdocs"
+tracker = "https://github.com/patmlr/qdocs/issues"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
+
+[tool.hatch.build.targets.wheel]
 packages = ["qdocs"]
 
-[tool.setuptools.package-data]
-qdocs = ["templates/*.html"]
+[tool.hatch.build.targets.sdist]
+exclude = [
+    ".github/",
+    "_includes/",
+    "_layouts/",
+    "_sass/",
+    "assets/",
+]
+
+[tool.ruff]
+extend-exclude = [
+    "__pycache__",
+    "_includes",
+    "_layouts",
+    "_sass",
+    "assets",
+]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "ANN",
+    "E",
+    "F",
+    "I",
+    "ICN",
+    "ISC",
+    "NPY",
+    "Q",
+    "RET",
+    "RUF",
+    "SIM",
+    "TC",
+    "TID",
+    "UP",
+]
+
+ignore = [
+    "ANN003",
+    "ANN401",
+    "E741",
+    "RUF012",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["qdocs"]

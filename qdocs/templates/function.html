@@ -7,7 +7,7 @@ title: [[ title ]]
 <span class="sig-prename">[[ prename ]].</span>
 [%- if classname %]<span class="sig-classname">[[ classname ]]</span><span class="sig-prename">.</span>[% endif %]
 <span class="[[ 'sig-classname' if is_class else 'sig-name' ]]">[[ name ]]</span>
-[%- if not is_namespace %]
+[%- if has_sig %]
 <span class="sig-paren">&nbsp;(&nbsp;</span>
 [%- for p in sig %]
 <em class="sig-param">
@@ -24,16 +24,6 @@ title: [[ title ]]
 <dd class="field-body">
 [[ description ]]
 <dl class="field-list">
-[%- if attributes %]
-<dt class="field-head">Attributes<span class="colon">:</span></dt>
-<dd class="field-par">
-<dl>
-[%- for a in attributes %]
-<dt>[[ a.name ]]<span class="attr-value">[[ a.value ]]</span></dt>
-[%- endfor %]
-</dl>
-</dd>
-[%- endif %]
 [%- if params %]
 <dt class="field-head">Parameters<span class="colon">:</span></dt>
 <dd class="field-par">
@@ -41,6 +31,20 @@ title: [[ title ]]
 [%- for p in params %]
 <dt>[[ p.name ]][% if p.type %]<span class="classifier"><em>[[ p.type ]]</em></span>[% endif %]</dt>
 <dd class="field-desc">[[ p.description ]]</dd>
+[%- endfor %]
+</dl>
+</dd>
+[%- endif %]
+[%- if attributes %]
+<dt class="field-head">Attributes<span class="colon">:</span></dt>
+<dd class="field-par">
+<dl>
+[%- for a in attributes %]
+<dt>[[ a.name ]][% if a.type %]<span class="classifier"><em>[[ a.type ]]</em></span>[% endif %]
+[%- if a.value is not none %]<span class="attr-value">[[ a.value ]]</span>[% endif %]</dt>
+[%- if a.description %]
+<dd class="field-desc">[[ a.description ]]</dd>
+[%- endif %]
 [%- endfor %]
 </dl>
 </dd>

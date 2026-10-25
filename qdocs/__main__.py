@@ -42,7 +42,9 @@ def preview(docs: str, command: str, options: list[str]) -> int:
 
     env = dict(os.environ, BUNDLE_GEMFILE=os.path.join(docs, "Gemfile"))
     # The copy is not a git repository, site.github needs the repository of the site.
-    origin = subprocess.run(["git", "-C", docs, "remote", "get-url", "origin"], capture_output=True, text=True).stdout
+    origin = subprocess.run(
+        ["git", "-C", docs, "remote", "get-url", "origin"], capture_output=True, text=True, check=False
+    ).stdout
     m = re.search(r"github\.com[:/](.+?)(?:\.git)?\s*$", origin)
     if m and "PAGES_REPO_NWO" not in env:
         env["PAGES_REPO_NWO"] = m.group(1)
@@ -51,7 +53,7 @@ def preview(docs: str, command: str, options: list[str]) -> int:
     return subprocess.call(args, cwd=site, env=env, shell=sys.platform == "win32")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Commands for the qdocs theme.")
     sub = parser.add_subparsers(dest="target", required=True)
     sub.add_parser("css", help="Generate _sass/qdocs/pycode.scss.")

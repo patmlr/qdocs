@@ -5,3 +5,4 @@ dist/
 _site/
 .jekyll-cache/
 .jekyll-metadata
+.ruff_cache/

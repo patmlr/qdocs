@@ -38,7 +38,7 @@ class Project:
     examples: str = ""
     logo: str = "assets/img/logo.svg"
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.root = os.path.abspath(self.root)
         self.docs = os.path.abspath(self.docs or os.path.join(self.root, "docs"))
         self.examples = os.path.abspath(self.examples or os.path.join(self.root, "examples"))

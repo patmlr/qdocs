@@ -6,6 +6,7 @@ pages live on the website.
 import importlib
 import inspect
 import os
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -30,9 +31,18 @@ class Entry:
         return f"{self.namespace}.{self.name}"
 
     @property
-    def func(self):
-        """The function whose signature and docstring describe this entry."""
-        return self.obj.__init__ if self.kind == "class" else self.obj
+    def func(self) -> Callable[..., Any] | None:
+        """
+        The function whose signature and docstring describe this entry. For a class this is `__init__`, or `__new__`
+        if only that is overridden. None for a class that overrides neither.
+        """
+        if self.kind != "class":
+            return self.obj
+        for name in ("__init__", "__new__"):
+            func = getattr(self.obj, name)
+            if func is not getattr(object, name):
+                return func
+        return None
 
 
 @dataclass
@@ -51,11 +61,11 @@ class Module:
     entries: list[Entry]
 
 
-def _public_methods(cls) -> list[str]:
+def _public_methods(cls: type) -> list[str]:
     return [name for name, _ in inspect.getmembers(cls, inspect.isfunction) if not name.startswith("_")]
 
 
-def _defining_class(cls, name: str):
+def _defining_class(cls: type, name: str) -> type:
     for c in cls.__mro__:
         if name in vars(c):
             return c
@@ -107,7 +117,7 @@ def collect(project: Project) -> list[Module]:
     return modules
 
 
-def iter_pages(modules: list[Module]):
+def iter_pages(modules: list[Module]) -> Iterator[Entry]:
     """Yield every entry that gets its own page."""
     for module in modules:
         for entry in module.entries:
@@ -128,7 +138,7 @@ def build_index(project: Project, modules: list[Module]) -> dict[str, list[Entry
     index: dict[str, list[Entry]] = {}
     package = project.package
 
-    def add(key, entry):
+    def add(key: str, entry: Entry) -> None:
         bucket = index.setdefault(key, [])
         if entry not in bucket:
             bucket.append(entry)
@@ -149,7 +159,7 @@ def build_index(project: Project, modules: list[Module]) -> dict[str, list[Entry
     return index
 
 
-def source_location(project: Project, obj) -> tuple[str, int, int]:
+def source_location(project: Project, obj: Any) -> tuple[str, int, int]:
     """
     :param project: The documented project.
     :param obj: A function or class.

@@ -17,7 +17,7 @@ description: A performant, verbose and generic physical unit system.
 show_downloads: true                # The PyPi, GitHub and .zip links.
 accent_color: "#2a7fff"             # The color of the logo.
 copyright: 2026 Patrick M&#252;ller. All rights reserved.
-remote_theme: patmlr/qdocs@v0.1.0   # Pin a tag, so theme changes do not reach the site unnoticed.
+remote_theme: patmlr/qdocs@v0.2.0   # Pin a tag, so theme changes do not reach the site unnoticed.
 plugins:
   - jekyll-remote-theme
   - jekyll-seo-tag
@@ -28,10 +28,10 @@ The site provides `_data/navigation.yml` (top navigation), `_data/tutorials.yml`
 Any theme file can be overridden by a file at the same path in the site. Extra styles go in `_sass/custom.scss`,
 extra `<head>` tags in `_includes/head-custom.html`.
 
-`docs/requirements.txt`:
+`docs/requirements.txt`, with the same version as `remote_theme`:
 
 ```text
-qdocs @ git+https://github.com/patmlr/qdocs@v0.1.0
+qdocs==0.2.0
 ```
 
 `docs/_gen/build.py`:
@@ -48,7 +48,7 @@ PROJECT = Project(
     modules=["algebra", "analyze", "models", "physics"],
     root=ROOT,
     namespaced={"analyze", "models"},  # qspec.models.Model instead of qspec.Model.
-    type_aliases="qtypes",             # Optional: link these type aliases in annotations to their module page.
+    type_aliases="qtypes",  # Optional: link these type aliases in annotations to their module page.
 )
 
 if __name__ == "__main__":
@@ -70,9 +70,11 @@ layout, which adds the navigation. See `Project` in [`qdocs/project.py`](qdocs/p
 
 ### Customizations
 
-Classes listed in `Project.namespaces` are documented like a module of constants: no signature and no methods, but an
-Attributes section with their public class attributes. Enums are documented this way automatically. Subclass
-`ApiBuilder` to change which attributes are listed or how values are shown:
+Every class page has an Attributes section with the public class attributes, the annotated instance attributes
+(including `__slots__`) and the properties of the class. Classes listed in `Project.namespaces` are documented like a
+module of constants: no signature and no methods, only the description and the attributes. Enums are documented this
+way automatically. Subclass `ApiBuilder` to change which attributes are listed (`attributes` returns a list of
+`Attribute`) or how values are shown:
 
 ```python
 from qdocs import ApiBuilder, Project, main
@@ -122,6 +124,16 @@ def york_fit(x, y, sigma_x=None, ...):
 - A leading `(name)` in `:returns:` labels the return value(s), otherwise it is shown as `out`.
 - Types are taken from the annotations as written in the source.
 - Methods without a docstring inherit the docstring of the overridden method.
+- The signature and the parameters of a class are those of `__init__`, or of `__new__` if only that is overridden.
+  A class that overrides neither has no signature.
+- Attributes are described by a string below their assignment or annotation in the class body, properties by their
+  docstring:
+
+  ```python
+  class Unit:
+      scale: float
+      """The scale factor of the unit relative to the SI base units."""
+  ```
 
 The generator warns about parameters that are missing in the docstring or the signature.
 
@@ -133,6 +145,7 @@ Mark a block in an example script and include it in a tutorial page:
 # examples/tutorial_2.py
 # docs: hfs-0
 import qspec as qs
+
 ...
 # docs: end
 ```
@@ -148,7 +161,7 @@ matching region.
 ## Developing the theme
 
 ```bash
-pip install -e . --config-settings editable_mode=compat
+pip install -e .
 python -m qdocs css                          # _sass/qdocs/pycode.scss from the Pygments styles in qdocs/tutorials.py.
 python -m qdocs preview ../qspec/docs        # Serve a site with this checkout instead of its remote_theme.
 python -m qdocs preview ../qunits/docs build
@@ -160,8 +173,9 @@ All colors are CSS custom properties in [`assets/css/style.scss`](assets/css/sty
 the dark values in the `dark-colors` mixin. The code highlighting styles are `STYLE` and `STYLE_DARK` in
 [`qdocs/tutorials.py`](qdocs/tutorials.py).
 
-To release, tag the commit (`git tag v0.1.1 && git push --tags`) and update `remote_theme` and `requirements.txt` of
-the sites.
+To release, run the workflow on main (Actions > Build and release > Run workflow) and choose the version bump. It
+publishes the package to PyPI and creates the tag `vX.Y.Z` and a GitHub release. Then update `remote_theme` and
+`requirements.txt` of the sites. The version of a checkout is derived from the latest tag with hatch-vcs.
 
 The base styles and the Noto Sans fonts are from [jekyll-theme-minimal](https://github.com/pages-themes/minimal)
 (CC0 1.0).

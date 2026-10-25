@@ -10,7 +10,7 @@ Conversion of docstring prose to HTML. Supported markup:
 
 import html
 import re
-from typing import Callable
+from collections.abc import Callable
 
 BLOCK_MATH = re.compile(r"\$\$(.+?)\$\$", re.DOTALL)
 INLINE_MATH = re.compile(r"(?<![\\$])\$(?!\$)(.+?)(?<![\\$])\$", re.DOTALL)
@@ -24,7 +24,7 @@ def _escape(text: str) -> str:
 
 
 class Converter:
-    def __init__(self, resolve: Callable[[str], str]):
+    def __init__(self, resolve: Callable[[str], str]) -> None:
         """
         :param resolve: Returns the site url of a referenced name. Must raise a `KeyError` for unknown names.
         """
@@ -33,7 +33,7 @@ class Converter:
     def __call__(self, text: str) -> str:
         stash: list[tuple[str, str]] = []  # (kind, html)
 
-        def put(kind, value):
+        def put(kind: str, value: str) -> str:
             stash.append((kind, value))
             return f"\x00{len(stash) - 1}\x00"
 
@@ -53,18 +53,18 @@ class Converter:
         return f"<a href=\"{{{{ '{url}' | relative_url }}}}\"><code>{_escape(name)}</code></a>"
 
     @staticmethod
-    def _block(block: str, stash) -> list[str]:
+    def _block(block: str, stash: list[tuple[str, str]]) -> list[str]:
         """Split a block into paragraphs, block math and lists."""
         out = []
         para: list[str] = []
         items: list[list[str]] = []
 
-        def flush_para():
+        def flush_para() -> None:
             if para:
                 out.append("<p>" + "\n".join(para) + "</p>")
                 para.clear()
 
-        def flush_items():
+        def flush_items() -> None:
             if items:
                 out.append("<ul>" + "".join("<li>" + "\n".join(i) + "</li>" for i in items) + "</ul>")
                 items.clear()

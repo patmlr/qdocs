@@ -14,6 +14,7 @@ import glob
 import os
 import re
 import textwrap
+from collections.abc import Callable
 
 from pygments import highlight
 from pygments.formatters import HtmlFormatter
@@ -66,7 +67,7 @@ def to_html(code: str) -> str:
     return highlight(code, lexer, formatter)
 
 
-def build(project: Project, write) -> list[str]:
+def build(project: Project, write: Callable[[str, str], None]) -> list[str]:
     """
     :param project: The documented project.
     :param write: A function `write(path, text)`.

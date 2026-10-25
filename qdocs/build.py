@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import sys
+from dataclasses import dataclass
 from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -39,21 +40,34 @@ env = Environment(
 # The colors of the light logo and their replacements in the dark logo.
 DARK_LOGO_COLORS = {"#000000": "#e8e6ed", "#808080": "#a9a6b0"}
 
+# The value of an attribute that has none on the class, e.g. an instance attribute or a property.
+EMPTY = inspect.Parameter.empty
 
-def write(path: str, text: str):
+
+@dataclass
+class Attribute:
+    """An attribute listed on the page of a class."""
+
+    name: str
+    value: Any = EMPTY
+    type: str | None = None  # The annotation source text.
+    description: str = ""
+
+
+def write(path: str, text: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
 
 
-def _default(value) -> tuple[str, str]:
+def _default(value: Any) -> tuple[str, str]:
     """
     :returns: (text, color_class) The HTML text of a default value and the CSS class that colors it.
     """
     if isinstance(value, bool):
         return str(value), "bool"
     if isinstance(value, str):
-        return html.escape(f"'{value}'"), "string"
+        return html.escape(repr(value)), "string"  # Quotes and control characters as in the source.
     if isinstance(value, (int, float, tuple)):
         return html.escape(str(value)), "num"
     if callable(value):
@@ -61,7 +75,7 @@ def _default(value) -> tuple[str, str]:
     return html.escape(str(value)), ""
 
 
-def _is_enum(obj) -> bool:
+def _is_enum(obj: Any) -> bool:
     return inspect.isclass(obj) and issubclass(obj, enum.Enum)
 
 
@@ -71,7 +85,7 @@ class ApiBuilder:
     see `attributes` and `format_value`.
     """
 
-    def __init__(self, project: Project):
+    def __init__(self, project: Project) -> None:
         self.project = project
         self.modules = collect.collect(project)
         self.index = collect.build_index(project, self.modules)
@@ -103,24 +117,42 @@ class ApiBuilder:
             self.errors.append(f"{self._current}: ambiguous reference [`{name}`], use one of {options}")
         return "#"
 
-    def attributes(self, entry: collect.Entry) -> list[tuple[str, Any]]:
+    def attributes(self, entry: collect.Entry) -> list[Attribute]:
         """
-        :param entry: A namespace or an enum.
-        :returns: (name, value) The attributes listed on the page of the entry. These are the members of an enum
-         and the public class attributes of a namespace that are neither methods nor properties.
+        :param entry: A class, namespace or enum.
+        :returns: The attributes listed on the page of the entry. These are the members of an enum, and the public
+         class attributes, annotated instance attributes (including `__slots__`) and properties of a class, sorted by
+         name. Types and descriptions are the annotations and the docstrings below the attributes in the class body
+         (or of its bases), and the return annotations and docstrings of the properties.
         """
         cls = entry.obj
+        source = annotations.class_attributes(cls)
         if _is_enum(cls):
-            return [(m.name, m.value) for m in cls]
-        return [
-            (name, value)
-            for name, value in inspect.getmembers(cls)
-            if not name.startswith("_")
-            and not inspect.isroutine(value)
-            and not isinstance(inspect.getattr_static(cls, name), property)
-        ]
+            return [Attribute(m.name, m.value, description=source.get(m.name, (None, ""))[1]) for m in cls]
 
-    def format_value(self, value) -> str:
+        ret = []
+        for name, value in inspect.getmembers(cls):
+            if name.startswith("_") or inspect.isroutine(value):
+                continue
+            static = inspect.getattr_static(cls, name)
+            annotation, description = source.get(name, (None, ""))
+            if isinstance(static, property):
+                doc = docstring.parse(inspect.getdoc(static))
+                returns = annotations.source_annotations(static.fget)[1] if static.fget else None
+                desc = doc.description or (doc.returns.description if doc.returns else "")
+                ret.append(Attribute(name, type=returns, description=desc))
+            elif inspect.isdatadescriptor(static) or inspect.ismethoddescriptor(static):
+                if name in source:  # A slot of an annotated attribute, not a descriptor of a builtin base.
+                    ret.append(Attribute(name, type=annotation, description=description))
+            else:
+                ret.append(Attribute(name, value, annotation, description))
+        # Annotated instance attributes without a class attribute.
+        for name, (annotation, description) in source.items():
+            if annotation is not None and not name.startswith("_") and not hasattr(cls, name):
+                ret.append(Attribute(name, type=annotation, description=description))
+        return sorted(ret, key=lambda a: a.name)
+
+    def format_value(self, value: Any) -> str:
         """
         :param value: A default value of a parameter or the value of an attribute.
         :returns: The HTML of the value. Parts are colored with the classes string, bool, num, class and func
@@ -138,19 +170,19 @@ class ApiBuilder:
         self._current = entry.qualname
         is_namespace = entry.kind == "namespace" or _is_enum(entry.obj)
         is_class = entry.kind in ("class", "namespace")
-        source = dict(zip(("path", "start", "stop"), collect.source_location(self.project, entry.obj)))
-        source["branch"] = self.project.branch
+        path, start, stop = collect.source_location(self.project, entry.obj)
+        source = dict(path=path, start=start, stop=stop, branch=self.project.branch)
         if entry.kind == "method":
             prename, classname = entry.owner.namespace, entry.owner.name  # type: ignore
         else:
             prename, classname = entry.namespace, ""
-        context = dict(
+        context: dict[str, Any] = dict(
             title=entry.qualname,
             prename=prename,
             classname=classname,
             name=entry.name,
             is_class=is_class,
-            is_namespace=is_namespace,
+            has_sig=False,
             source=source,
             sig=[],
             attributes=[],
@@ -159,33 +191,42 @@ class ApiBuilder:
             raises=[],
         )
 
-        if is_namespace:
+        # Namespaces and classes without their own __init__ or __new__ have no signature.
+        if is_namespace or (entry.kind == "class" and entry.func is None):
             doc = docstring.parse(inspect.getdoc(entry.obj))
             warnings = docstring.validate(doc, [], True)
-            context["attributes"] = [dict(name=n, value=self.format_value(v)) for n, v in self.attributes(entry)]
         else:
-            self._signature(entry, context)
-            doc = context.pop("doc")
-            warnings = context.pop("warnings")
+            doc, warnings = self._signature(entry, context)
+        if is_class:
+            context["attributes"] = [
+                dict(
+                    name=a.name,
+                    type=self.link_types(a.type) if a.type else None,
+                    value=None if a.value is EMPTY else self.format_value(a.value),
+                    description=self.convert(a.description),
+                )
+                for a in self.attributes(entry)
+            ]
         if warnings:
             self.warnings[entry.qualname] = warnings
         context["description"] = self.convert(doc.description)
-        context["raises"] = [
-            dict(error=html.escape(err), description=self.convert(desc)) for err, desc in doc.raises
-        ]
+        context["raises"] = [dict(error=html.escape(err), description=self.convert(desc)) for err, desc in doc.raises]
         return env.get_template("function.html").render(**context)
 
-    def _signature(self, entry: collect.Entry, context: dict):
-        """Add the signature, the parameters and the returns of a function, class or method to the page context."""
+    def _signature(self, entry: collect.Entry, context: dict[str, Any]) -> tuple[docstring.Docstring, list[str]]:
+        """
+        Add the signature, the parameters and the returns of a function, class or method to the page context.
+
+        :returns: (doc, warnings) The parsed docstring and the warnings about it.
+        """
         func = entry.func
+        assert func is not None, "classes without __init__ or __new__ have no signature"
         is_class = entry.kind == "class"
         sig = inspect.signature(entry.obj)
         params = [(n, p) for n, p in sig.parameters.items() if n != "self"]
+        context["has_sig"] = True
 
-        if is_class:
-            doc = docstring.parse(func.__doc__ or entry.obj.__doc__)
-        else:  # Overridden methods without a docstring inherit the docstring of the base class.
-            doc = docstring.parse(inspect.getdoc(func))
+        doc = docstring.parse((func.__doc__ or entry.obj.__doc__) if is_class else inspect.getdoc(func))
         param_types, return_type = annotations.source_annotations(func)
 
         for name, p in params:
@@ -210,8 +251,9 @@ class ApiBuilder:
                 type=self.link_types(return_type) if return_type else None,
                 description=self.convert(desc),
             )
-        context["doc"] = doc
-        context["warnings"] = docstring.validate(doc, [n for n, _ in params], is_class)
+        # A __new__ returns the instance, so it may document ':returns:'.
+        no_returns = is_class and func.__name__ != "__new__"
+        return doc, docstring.validate(doc, [n for n, _ in params], no_returns)
 
     def build(self) -> list[str]:
         """
@@ -245,7 +287,7 @@ def dark_logo(svg: str) -> str:
     return pattern.sub(lambda m: DARK_LOGO_COLORS[m.group(0).lower()], svg)
 
 
-def main(project: Project, builder: type[ApiBuilder] = ApiBuilder, argv: list[str] | None = None):
+def main(project: Project, builder: type[ApiBuilder] = ApiBuilder, argv: list[str] | None = None) -> None:
     """
     :param project: The documented project.
     :param builder: The class that builds the API pages, a subclass of `ApiBuilder` for customizations.
