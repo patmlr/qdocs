@@ -27,6 +27,7 @@ The site provides `_data/navigation.yml` (top navigation), `_data/tutorials.yml`
 `_includes/badges.html` (optional) and its logos `assets/img/logo.svg`, `logo_dark.svg` and `logo_small.svg`.
 Any theme file can be overridden by a file at the same path in the site. Extra styles go in `_sass/custom.scss`,
 extra `<head>` tags in `_includes/head-custom.html`.
+The search in the top navigation finds the pages with a `title` in their front matter, by title and text.
 
 `docs/requirements.txt`, with the same version as `remote_theme`:
 
