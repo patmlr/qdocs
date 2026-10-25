@@ -19,7 +19,6 @@ class Project:
     :param include: The modules for which only the listed names are documented.
     :param namespaces: The fully qualified names of classes that are documented as a namespace of attributes
      (no signature, no methods), e.g. a registry class used like a module. Enums are documented this way, too.
-    :param type_aliases: The module whose type aliases and classes are linked to its module page in annotations.
     :param branch: The branch of the source links.
     :param docs: The Jekyll site. Defaults to `root/docs`.
     :param examples: The example scripts with the tutorial code regions. Defaults to `root/examples`.
@@ -32,7 +31,6 @@ class Project:
     namespaced: set[str] = field(default_factory=set)
     include: dict[str, set[str]] = field(default_factory=dict)
     namespaces: set[str] = field(default_factory=set)
-    type_aliases: str | None = None
     branch: str = "main"
     docs: str = ""
     examples: str = ""

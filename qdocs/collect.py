@@ -10,6 +10,7 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from qdocs import annotations
 from qdocs.project import Project
 
 
@@ -18,11 +19,11 @@ class Entry:
     """A documented function, class, namespace or method."""
 
     name: str
-    obj: Any  # The function, class or method. None for modules.
+    obj: Any  # The function, class or method. None for modules and aliases.
     module: str  # The module (file) this entry is documented in, e.g. "analyze".
     namespace: str  # The public namespace, e.g. "qspec.analyze" or "qspec.models.Model".
     url: str  # The site url of the page, e.g. "/doc/functions/analyze/york_fit.html".
-    kind: str  # "function", "class", "namespace", "method" or "module" (only used as a reference target).
+    kind: str  # "function", "class", "namespace", "method", or "module" and "alias" (only reference targets).
     owner: "Entry | None" = None  # The class of a method.
     methods: list["Method"] = field(default_factory=list)  # The methods of a class.
 
@@ -34,13 +35,13 @@ class Entry:
     def func(self) -> Callable[..., Any] | None:
         """
         The function whose signature and docstring describe this entry. For a class this is `__init__`, or `__new__`
-        if only that is overridden. None for a class that overrides neither.
+        if only that is overridden. None for a class that overrides neither, or only by `typing`, e.g. a `Protocol`.
         """
         if self.kind != "class":
             return self.obj
         for name in ("__init__", "__new__"):
             func = getattr(self.obj, name)
-            if func is not getattr(object, name):
+            if func is not getattr(object, name) and getattr(func, "__module__", None) != "typing":
                 return func
         return None
 
@@ -55,10 +56,26 @@ class Method:
 
 
 @dataclass
+class Alias:
+    """
+    A type alias `type name[params] = value`, listed on the page of its module. `params` is the source text of the
+    type parameters, e.g. "[T: generic]", or "", `value` the source text of the aliased type and `url` the anchor on
+    the module page, e.g. "/doc/modules/prefix.html#ExpMap".
+    """
+
+    name: str
+    params: str
+    value: str
+    description: str
+    url: str
+
+
+@dataclass
 class Module:
     name: str
     url: str
     entries: list[Entry]
+    aliases: list[Alias] = field(default_factory=list)
 
 
 def _public_methods(cls: type) -> list[str]:
@@ -96,7 +113,12 @@ def collect(project: Project) -> list[Module]:
             else:
                 entry = Entry(name, obj, file, namespace, f"/doc/functions/{file}/{name}.html", "function")
             entries.append(entry)
-        modules.append(Module(file, f"/doc/modules/{file}.html", entries))
+        url = f"/doc/modules/{file}.html"
+        aliases = [
+            Alias(name, params, value, description, f"{url}#{name}")
+            for name, params, value, description in annotations.type_aliases(f"{project.package}.{file}")
+        ]
+        modules.append(Module(file, url, entries, aliases))
 
     # Methods are resolved after all classes are known, so inherited methods can link across modules.
     for cls, entry in classes.items():
@@ -133,7 +155,7 @@ def build_index(project: Project, modules: list[Module]) -> dict[str, list[Entry
     :param modules: The documented modules.
     :returns: A map from every name an entry can be referenced by in docstrings to the matching entries.
      Names are the short name (`fit`), `Class.method`, the fully qualified name (`qspec.models.fit`)
-     and the module names (`qspec.analyze`).
+     the module names (`qspec.analyze`) and the type aliases (`scalar`, `qspec.qtypes.scalar`).
     """
     index: dict[str, list[Entry]] = {}
     package = project.package
@@ -152,6 +174,10 @@ def build_index(project: Project, modules: list[Module]) -> dict[str, list[Entry
             add(f"{entry.owner.name}.{entry.name}", entry)
     for module in modules:
         add(f"{package}.{module.name}", Entry(module.name, None, module.name, package, module.url, "module"))
+        for alias in module.aliases:
+            entry = Entry(alias.name, None, module.name, f"{package}.{module.name}", alias.url, "alias")
+            add(alias.name, entry)
+            add(entry.qualname, entry)
         for entry in module.entries:
             for m in entry.methods:  # Inherited methods are also reachable as Subclass.method.
                 add(f"{entry.name}.{m.name}", m.entry)

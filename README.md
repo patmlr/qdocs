@@ -48,7 +48,6 @@ PROJECT = Project(
     modules=["algebra", "analyze", "models", "physics"],
     root=ROOT,
     namespaced={"analyze", "models"},  # qspec.models.Model instead of qspec.Model.
-    type_aliases="qtypes",  # Optional: link these type aliases in annotations to their module page.
 )
 
 if __name__ == "__main__":
@@ -61,20 +60,34 @@ python docs/_gen/build.py [api | tutorials | logo | all]
 
 | Target      | Source                                    | Output                                           |
 |-------------|-------------------------------------------|--------------------------------------------------|
-| `api`       | docstrings and signatures of the package  | `doc/functions/**`, `_includes/api-nav.html`     |
+| `api`       | docstrings and signatures of the package  | `doc/functions/**`, `_includes/api-nav.html`,    |
+|             |                                           | `_includes/types/<module>.html`                  |
 | `tutorials` | `# docs: <name>` regions in `examples/`   | `_includes/code/<name>.html`                     |
 | `logo`      | `assets/img/logo.svg`                     | `assets/img/logo_dark.svg`                       |
 
 The module pages `doc/modules/<module>.html` and the overview `doc/doc.html` are written by hand with the `api`
 layout, which adds the navigation. See `Project` in [`qdocs/project.py`](qdocs/project.py) for all options.
 
+The type aliases of a module (`type scalar = int | float`) are listed in `_includes/types/<module>.html`. Include the
+list in the module page with `{% include types/<module>.html %}`. Type aliases in annotations link to their entry in
+that list, and the build notes module pages that do not include their list.
+
 ### Customizations
 
 Every class page has an Attributes section with the public class attributes, the annotated instance attributes
-(including `__slots__`) and the properties of the class. Classes listed in `Project.namespaces` are documented like a
-module of constants: no signature and no methods, only the description and the attributes. Enums are documented this
-way automatically. Subclass `ApiBuilder` to change which attributes are listed (`attributes` returns a list of
-`Attribute`) or how values are shown:
+(including `__slots__`) and the properties of the class, sorted by name. Classes listed in `Project.namespaces` are
+documented like a module of constants: no signature and no methods, only the description and the attributes in source
+order. Enums are documented this way automatically.
+
+Default values in signatures and attribute values are shown as Python source:
+
+- Strings, numbers, booleans, enum members, classes and functions as written in code. Documented classes are linked.
+- Tuples, lists, sets and dicts item by item. Sets are sorted, so the pages do not change between builds.
+- Other objects as the call of their class that recreates them, e.g. `Unit(1000.0, frozenset({('km', 1)}), Length,
+  Context.I)`, if every parameter of the class is an attribute of the object, otherwise as `str(value)`.
+
+Subclass `ApiBuilder` to change which attributes are listed (`attributes` returns a list of `Attribute`) or how
+values are shown:
 
 ```python
 from qdocs import ApiBuilder, Project, main
@@ -83,15 +96,15 @@ from qdocs import ApiBuilder, Project, main
 class Builder(ApiBuilder):
     def format_value(self, value) -> str:
         if isinstance(value, Unit):
-            return f'<span class="default_value"><span class="class">Unit</span>(...)</span>'
+            return f'<span class="class">Unit</span>({self.format_value(value.scale)})'
         return super().format_value(value)
 
 
 main(PROJECT, Builder)
 ```
 
-`format_value` is used for default values in signatures and for attribute values. Color the parts of a value with
-the classes `string`, `bool`, `num`, `class` and `func` inside a `default_value` span.
+`format_value` returns the HTML of a value or of a part of a value, and is called for the items of containers and
+the arguments of objects, too. Color the parts with the classes `string`, `bool`, `num`, `class` and `func`.
 
 ## Docstrings
 
@@ -118,21 +131,30 @@ def york_fit(x, y, sigma_x=None, ...):
 
 - `` `code` `` and raw HTML (e.g. links to papers) are passed through.
 - `$inline$` and `$$block$$` math is rendered by MathJax. Block math always stands on its own line on the website.
-- `` [`name`] `` links to a documented object: `fit`, `King.fit`, `qspec.models.fit`, `qspec.physics.doppler`
-  or a module such as `qspec.analyze`. Unknown or ambiguous names stop the build.
+- `` [`name`] `` links to a documented object: `fit`, `King.fit`, `qspec.models.fit`, `qspec.physics.doppler`,
+  a module such as `qspec.analyze` or a type alias such as `scalar`. Unknown or ambiguous names stop the build.
 - Blank lines separate paragraphs, lines starting with `- ` form a list.
 - A leading `(name)` in `:returns:` labels the return value(s), otherwise it is shown as `out`.
 - Types are taken from the annotations as written in the source.
 - Methods without a docstring inherit the docstring of the overridden method.
 - The signature and the parameters of a class are those of `__init__`, or of `__new__` if only that is overridden.
   A class that overrides neither has no signature.
+- The description of a class is its docstring, followed by the description in the docstring of `__init__` or
+  `__new__`. The fields can be in either docstring.
+- Type aliases are described by a string on the line right below them (a string after a blank line is not taken):
+
+  ```python
+  type ExpMap = frozenset[tuple[str, int]]
+  """An exponent map, a frozenset of (symbol, exponent) pairs."""
+  ```
+
 - Attributes are described by a string below their assignment or annotation in the class body, properties by their
   docstring:
 
   ```python
   class Unit:
       scale: float
-      """The scale factor of the unit relative to the SI base units."""
+      """The scale factor of the unit relative to the SI unit of its dimension."""
   ```
 
 The generator warns about parameters that are missing in the docstring or the signature.

@@ -14,21 +14,30 @@ from typing import Any
 IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_.]*")
 
 
-def module_aliases(module: str) -> set[str]:
+def type_aliases(module: str) -> list[tuple[str, str, str, str]]:
     """
-    :param module: The fully qualified name of a module.
-    :returns: The type aliases (`type x = ...`, `x = ...`) and classes defined in the module.
+    :param module: The fully qualified name of a module. The aliases of a package are those in its `__init__.py`.
+    :returns: (name, params, value, description) The public type aliases (`type name[params] = value`) of the module
+     in source order, with their type parameters ("" if there are none) and the docstring on the line right below
+     the alias ("" if there is none).
     """
-    tree = ast.parse(inspect.getsource(importlib.import_module(module)))
-    names = set()
-    for node in tree.body:
-        if isinstance(node, ast.TypeAlias):
-            names.add(node.name.id)  # type: ignore
-        elif isinstance(node, ast.Assign):
-            names.update(t.id for t in node.targets if isinstance(t, ast.Name) and not t.id.startswith("_"))
-        elif isinstance(node, ast.ClassDef):
-            names.add(node.name)
-    return names - {"__all__"}
+    source = inspect.getsource(importlib.import_module(module))
+    tree = ast.parse(source)
+    ret = []
+    for node, after in zip(tree.body, [*tree.body[1:], None]):
+        if not isinstance(node, ast.TypeAlias) or node.name.id.startswith("_"):
+            continue
+        params = ", ".join(ast.get_source_segment(source, p) for p in node.type_params)  # type: ignore
+        doc = ""
+        if (
+            isinstance(after, ast.Expr)
+            and isinstance(getattr(after.value, "value", None), str)
+            and after.lineno == node.end_lineno + 1  # type: ignore
+        ):
+            doc = inspect.cleandoc(after.value.value)  # type: ignore
+        value = ast.get_source_segment(source, node.value)
+        ret.append((node.name.id, f"[{params}]" if params else "", value, doc))  # type: ignore
+    return ret
 
 
 def _strip_quotes(text: str) -> str:
@@ -109,19 +118,19 @@ def _fallback(func: Callable[..., Any]) -> tuple[dict[str, str], str | None]:
 
 
 class Linker:
-    def __init__(self, class_urls: dict[str, str], aliases: set[str] = frozenset(), aliases_url: str = "") -> None:  # type: ignore
+    def __init__(self, class_urls: dict[str, str], alias_urls: dict[str, dict[str, str]]) -> None:
         """
         :param class_urls: A map from class names (short and fully qualified) to their site urls.
-        :param aliases: The names of type aliases, linked to `aliases_url`.
-        :param aliases_url: The site url of the module page that describes the type aliases.
+        :param alias_urls: A map from type alias names to the site urls of their definitions, by defining module.
         """
         self.class_urls = class_urls
-        self.aliases = aliases
-        self.aliases_url = aliases_url
+        self.alias_urls = alias_urls
 
-    def __call__(self, annotation: str) -> str:
+    def __call__(self, annotation: str, module: str | None = None) -> str:
         """
         :param annotation: The annotation source text.
+        :param module: The module of the annotation. Its own type aliases take precedence over those of the other
+         modules. A type alias defined in several other modules is not linked.
         :returns: The HTML of the annotation with documented classes and type aliases linked.
         """
         out = []
@@ -129,8 +138,9 @@ class Linker:
         for m in IDENTIFIER.finditer(annotation):
             name = m.group(0)
             url = self.class_urls.get(name)
-            if url is None and name in self.aliases:
-                url = self.aliases_url
+            if url is None and name in self.alias_urls:
+                urls = self.alias_urls[name]
+                url = urls.get(module) or (next(iter(urls.values())) if len(urls) == 1 else None)  # type: ignore
             if url is None:
                 continue
             out.append(html.escape(annotation[last : m.start()]))
