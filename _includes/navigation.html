@@ -13,8 +13,11 @@
             </a>
           </li>
           {% endfor %}
-          <!--p id="topnav-hor"></p>
-          <input type="text" placeholder="Search..."-->
+          <li class="topnav-content-li topnav-search" role="search" data-index="{{ '/assets/search.json' | relative_url }}">
+            <input type="search" class="topnav-search-input" placeholder="Search..." aria-label="Search the documentation"
+                   autocomplete="off" spellcheck="false" aria-controls="topnav-search-results" aria-expanded="false">
+            <ul id="topnav-search-results" class="topnav-search-results" role="listbox" hidden></ul>
+          </li>
         </ul>
       </div>
       <button type="button" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">

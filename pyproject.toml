@@ -20,6 +20,7 @@ classifiers = [
     "Topic :: Software Development :: Documentation",
 ]
 dependencies = [
+    "catppuccin[pygments]",
     "jinja2",
     "pygments>=2.17",
 ]

@@ -12,6 +12,7 @@ import argparse
 import enum
 import html
 import inspect
+import numbers
 import os
 import re
 import shutil
@@ -40,6 +41,8 @@ env = Environment(
 # The colors of the light logo and their replacements in the dark logo.
 DARK_LOGO_COLORS = {"#000000": "#e8e6ed", "#808080": "#a9a6b0"}
 
+TYPES_INCLUDE = re.compile(r"{%\s*include\s+types/(\S+?)\.html\s*%}")
+
 # The value of an attribute that has none on the class, e.g. an instance attribute or a property.
 EMPTY = inspect.Parameter.empty
 
@@ -60,19 +63,27 @@ def write(path: str, text: str) -> None:
         f.write(text)
 
 
-def _default(value: Any) -> tuple[str, str]:
+def _ctor_args(value: Any) -> list[tuple[str | None, Any]] | None:
     """
-    :returns: (text, color_class) The HTML text of a default value and the CSS class that colors it.
+    :param value: An object.
+    :returns: The arguments that recreate the object with its class, as (keyword, value) pairs. The keyword is `None`
+     for positional arguments. `None` if the class takes no arguments, `*args` or `**kwargs`, or if a parameter is not
+     an attribute of the object.
     """
-    if isinstance(value, bool):
-        return str(value), "bool"
-    if isinstance(value, str):
-        return html.escape(repr(value)), "string"  # Quotes and control characters as in the source.
-    if isinstance(value, (int, float, tuple)):
-        return html.escape(str(value)), "num"
-    if callable(value):
-        return html.escape(value.__name__), ""
-    return html.escape(str(value)), ""
+    try:
+        params = list(inspect.signature(type(value)).parameters.values())
+    except (TypeError, ValueError):
+        return None
+    if not params or any(p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD) for p in params):
+        return None
+    args = []
+    for p in params:
+        try:
+            arg = getattr(value, p.name)
+        except Exception:
+            return None
+        args.append((p.name if p.kind == p.KEYWORD_ONLY else None, arg))
+    return args
 
 
 def _is_enum(obj: Any) -> bool:
@@ -99,12 +110,19 @@ class ApiBuilder:
                 if entry.kind == "class":
                     class_urls[entry.name] = entry.url
                     class_urls[entry.qualname] = entry.url
-        aliases, aliases_url = set(), ""
-        if project.type_aliases is not None:
-            aliases = annotations.module_aliases(f"{project.package}.{project.type_aliases}")
-            aliases_url = f"/doc/modules/{project.type_aliases}.html"
-        self.link_types = annotations.Linker(class_urls, aliases, aliases_url)
+        alias_urls: dict[str, dict[str, str]] = {}
+        for module in self.modules:
+            for alias in module.aliases:
+                alias_urls.setdefault(alias.name, {})[module.name] = alias.url
+        self.link_types = annotations.Linker(class_urls, alias_urls)
         self.convert = markup.Converter(self._resolve)
+        self._class_urls = {
+            entry.obj: entry.url
+            for module in self.modules
+            for entry in module.entries
+            if entry.kind in ("class", "namespace")
+        }
+        self._formatting: set[int] = set()
 
     def _resolve(self, name: str) -> str:
         entries = self.index.get(name, [])
@@ -122,8 +140,9 @@ class ApiBuilder:
         :param entry: A class, namespace or enum.
         :returns: The attributes listed on the page of the entry. These are the members of an enum, and the public
          class attributes, annotated instance attributes (including `__slots__`) and properties of a class, sorted by
-         name. Types and descriptions are the annotations and the docstrings below the attributes in the class body
-         (or of its bases), and the return annotations and docstrings of the properties.
+         name. Enums and namespaces keep the source order. Types and descriptions are the annotations and the
+         docstrings below the attributes in the class body (or of its bases), and the return annotations and
+         docstrings of the properties.
         """
         cls = entry.obj
         source = annotations.class_attributes(cls)
@@ -150,21 +169,73 @@ class ApiBuilder:
         for name, (annotation, description) in source.items():
             if annotation is not None and not name.startswith("_") and not hasattr(cls, name):
                 ret.append(Attribute(name, type=annotation, description=description))
-        return sorted(ret, key=lambda a: a.name)
+        ret.sort(key=lambda a: a.name)
+        if entry.kind == "namespace":
+            order: dict[str, int] = {}
+            for name in [*source, *(n for c in reversed(cls.__mro__) for n in vars(c))]:
+                order.setdefault(name, len(order))
+            ret.sort(key=lambda a: order.get(a.name, len(order)))
+        return ret
 
     def format_value(self, value: Any) -> str:
         """
-        :param value: A default value of a parameter or the value of an attribute.
-        :returns: The HTML of the value. Parts are colored with the classes string, bool, num, class and func
-         inside a `default_value` span.
+        :param value: A default value of a parameter, the value of an attribute or a part of such a value.
+        :returns: The HTML of the value, with its parts colored by the classes string, bool, num, class and func.
+         Tuples, lists, sets and dicts are formatted item by item, sets sorted. Other objects are shown as the call
+         of their class that recreates them, e.g. `Unit(1000.0, frozenset({('km', 1)}), Length, Context.I)`, if all
+         parameters of the class are attributes of the object, otherwise as `str(value)`. Documented classes are
+         linked to their pages.
         """
         if isinstance(value, enum.Enum):
-            return (
-                f'<span class="default_value"><span class="class">{html.escape(type(value).__name__)}</span>.'
-                f'<span class="func">{html.escape(value.name)}</span></span>'
-            )
-        text, color_class = _default(value)
-        return f'<span class="default_value{" " + color_class if color_class else ""}">{text}</span>'
+            return f'{self._class(type(value))}.<span class="func">{html.escape(value.name)}</span>'
+        if isinstance(value, bool):
+            return f'<span class="bool">{value}</span>'
+        if isinstance(value, str):
+            return f'<span class="string">{html.escape(repr(value))}</span>'  # Quotes and escapes as in the source.
+        if isinstance(value, numbers.Number):
+            return f'<span class="num">{html.escape(str(value))}</span>'
+        if value is None:
+            return "None"
+        if inspect.isclass(value):
+            return self._class(value)
+        if inspect.isroutine(value):
+            return f'<span class="func">{html.escape(value.__name__)}</span>'
+        if id(value) in self._formatting:
+            return "..."
+        self._formatting.add(id(value))
+        try:
+            return self._format_object(value)
+        finally:
+            self._formatting.discard(id(value))
+
+    def _format_object(self, value: Any) -> str:
+        cls = type(value)
+        if cls is tuple:
+            items = [self.format_value(v) for v in value]
+            return f"({', '.join(items)}{',' if len(items) == 1 else ''})"
+        if cls is list:
+            return f"[{', '.join(self.format_value(v) for v in value)}]"
+        if cls is dict:
+            return f"{{{', '.join(f'{self.format_value(k)}: {self.format_value(v)}' for k, v in value.items())}}}"
+        if cls in (set, frozenset):
+            items = sorted(self.format_value(v) for v in value)
+            if not items:
+                return f"{self._class(cls)}()"
+            braced = f"{{{', '.join(items)}}}"
+            return braced if cls is set else f"{self._class(cls)}({braced})"
+        args = _ctor_args(value)
+        if args is None:
+            return html.escape(str(value))
+        parts = [(f"{keyword}=" if keyword else "") + self.format_value(arg) for keyword, arg in args]
+        return f"{self._class(cls)}({', '.join(parts)})"
+
+    def _class(self, cls: type) -> str:
+        name = f'<span class="class">{html.escape(cls.__name__)}</span>'
+        url = self._class_urls.get(cls)
+        return name if url is None else f"<a href=\"{{{{ '{url}' | relative_url }}}}\">{name}</a>"
+
+    def _value(self, value: Any) -> str:
+        return f'<span class="default_value">{self.format_value(value)}</span>'
 
     def page(self, entry: collect.Entry) -> str:
         self._current = entry.qualname
@@ -201,8 +272,8 @@ class ApiBuilder:
             context["attributes"] = [
                 dict(
                     name=a.name,
-                    type=self.link_types(a.type) if a.type else None,
-                    value=None if a.value is EMPTY else self.format_value(a.value),
+                    type=self.link_types(a.type, entry.module) if a.type else None,
+                    value=None if a.value is EMPTY else self._value(a.value),
                     description=self.convert(a.description),
                 )
                 for a in self.attributes(entry)
@@ -226,18 +297,21 @@ class ApiBuilder:
         params = [(n, p) for n, p in sig.parameters.items() if n != "self"]
         context["has_sig"] = True
 
-        doc = docstring.parse((func.__doc__ or entry.obj.__doc__) if is_class else inspect.getdoc(func))
+        if is_class:
+            doc = docstring.merge(docstring.parse(entry.obj.__doc__), docstring.parse(func.__doc__))
+        else:
+            doc = docstring.parse(inspect.getdoc(func))
         param_types, return_type = annotations.source_annotations(func)
 
         for name, p in params:
             star = {p.VAR_POSITIONAL: "*", p.VAR_KEYWORD: "**"}.get(p.kind, "")
-            default = None if p.default is p.empty else self.format_value(p.default)
+            default = None if p.default is p.empty else self._value(p.default)
             context["sig"].append(dict(star=star, name=name, default=default))
 
         context["params"] = [
             dict(
                 name=name,
-                type=self.link_types(param_types[name]) if name in param_types else None,
+                type=self.link_types(param_types[name], entry.module) if name in param_types else None,
                 description=self.convert(doc.params.get(name, "")),
             )
             for name, _ in params
@@ -248,7 +322,7 @@ class ApiBuilder:
             label, desc = (doc.returns.label, doc.returns.description) if doc.returns else ("out", "")
             context["returns"] = dict(
                 label=label,
-                type=self.link_types(return_type) if return_type else None,
+                type=self.link_types(return_type, entry.module) if return_type else None,
                 description=self.convert(desc),
             )
         # A __new__ returns the instance, so it may document ':returns:'.
@@ -269,6 +343,7 @@ class ApiBuilder:
             n += 1
         write(nav_file, env.get_template("nav.html").render(package=self.project.package, modules=self.modules))
         print(f"Wrote {n} API pages and {os.path.relpath(nav_file, self.project.root)}.")
+        self._write_types()
 
         if self.warnings:
             print(f"\nDocstring warnings ({sum(len(w) for w in self.warnings.values())}):")
@@ -276,6 +351,50 @@ class ApiBuilder:
                 for w in warnings:
                     print(f"  {name}: {w}")
         return self.errors
+
+    def types(self, module: collect.Module) -> str:
+        """
+        :param module: A module with type aliases.
+        :returns: The HTML of the list of the type aliases of the module, included by its module page.
+        """
+        self._current = f"{self.project.package}.{module.name}"
+        aliases = [
+            dict(
+                name=a.name,
+                params=html.escape(a.params),
+                value=self.link_types(a.value, module.name),
+                description=self.convert(a.description),
+            )
+            for a in module.aliases
+        ]
+        return env.get_template("types.html").render(aliases=aliases)
+
+    def _write_types(self) -> None:
+        """
+        Write the type alias lists `_includes/types/<module>.html` and check that the module pages include them.
+        """
+        types_dir = os.path.join(self.project.docs, "_includes", "types")
+        if os.path.exists(types_dir):
+            shutil.rmtree(types_dir)
+        with_aliases = {m.name for m in self.modules if m.aliases}
+        for module in self.modules:
+            if module.aliases:
+                write(os.path.join(types_dir, f"{module.name}.html"), self.types(module))
+        if with_aliases:
+            print(f"Wrote the type alias lists of {', '.join(sorted(with_aliases))} to _includes/types/.")
+
+        for module in self.modules:
+            page = os.path.join(self.project.docs, module.url.lstrip("/"))
+            text = ""
+            if os.path.exists(page):
+                with open(page, encoding="utf-8") as f:
+                    text = f.read()
+            included = set(TYPES_INCLUDE.findall(text))
+            path = os.path.relpath(page, self.project.root)
+            if module.name in with_aliases and module.name not in included:
+                print(f"  note: {path} does not include types/{module.name}.html, its type aliases are not listed")
+            for name in sorted(included - with_aliases):
+                self.errors.append(f"{path}: includes types/{name}.html, but module '{name}' has no type aliases")
 
 
 def dark_logo(svg: str) -> str:

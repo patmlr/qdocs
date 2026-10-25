@@ -89,6 +89,25 @@ def parse(doc: str | None) -> Docstring:
     return ret
 
 
+def merge(first: Docstring, second: Docstring) -> Docstring:
+    """
+    :param first: A parsed docstring, e.g. of a class.
+    :param second: A parsed docstring that adds to the first, e.g. of its `__init__`.
+    :returns: The descriptions of both, separated by a blank line, and their fields. The fields of `second` override
+     those of `first`.
+    """
+    descriptions = [first.description, second.description]
+    if first.description == second.description:
+        descriptions = [first.description]
+    return Docstring(
+        description="\n\n".join(d for d in descriptions if d),
+        params={**first.params, **second.params},
+        returns=second.returns or first.returns,
+        raises=[*first.raises, *second.raises],
+        warnings=[*first.warnings, *second.warnings],
+    )
+
+
 def validate(doc: Docstring, params: list[str], is_class: bool) -> list[str]:
     """
     :param doc: The parsed docstring.

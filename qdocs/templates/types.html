@@ -1,0 +1,13 @@
+<dl class="field-list">
+<dt class="field-head">Type aliases<span class="colon">:</span></dt>
+<dd class="field-par">
+<dl>
+[%- for a in aliases %]
+<dt id="[[ a.name ]]">[[ a.name ]][[ a.params ]]<span class="attr-value"><em>[[ a.value ]]</em></span></dt>
+[%- if a.description %]
+<dd class="field-desc">[[ a.description ]]</dd>
+[%- endif %]
+[%- endfor %]
+</dl>
+</dd>
+</dl>
